@@ -76,6 +76,28 @@ ARG GIT_SHA
 ENV GIT_SHA ${GIT_SHA}
 
 
+### Indexer V2 Image ###
+
+FROM debian-base AS indexer_v2
+
+RUN apt-get update && apt-get install -y libssl1.1 ca-certificates net-tools tcpdump iproute2 netcat libpq-dev \
+    && apt-get clean && rm -r /var/lib/apt/lists/*
+
+COPY --link --from=builder /aptos/dist/aptos-sf-indexer /usr/local/bin/aptos-sf-indexer
+
+ENV RUST_LOG_FORMAT=json
+
+# add build info
+ARG BUILD_DATE
+ENV BUILD_DATE ${BUILD_DATE}
+ARG GIT_TAG
+ENV GIT_TAG ${GIT_TAG}
+ARG GIT_BRANCH
+ENV GIT_BRANCH ${GIT_BRANCH}
+ARG GIT_SHA
+ENV GIT_SHA ${GIT_SHA}
+
+
 ### Indexer Image ###
 
 FROM debian-base AS indexer

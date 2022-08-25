@@ -23,6 +23,7 @@ BINS=(
     aptos
     aptos-faucet
     aptos-indexer
+    aptos-sf-indexer
     aptos-node
     aptos-node-checker
     aptos-openapi-spec-generator
