@@ -460,6 +460,11 @@ module aptos_framework::stake {
         move_to(account, owner_cap);
     }
 
+    /// Destroy `owner_cap`.
+    public fun destroy_owner_cap(owner_cap: OwnerCapability) {
+        let OwnerCapability { pool_address: _ } = owner_cap;
+    }
+
     /// Allows an owner to change the operator of the stake pool.
     public entry fun set_operator(account: &signer, new_operator: address) acquires OwnerCapability, StakePool {
         let account_addr = signer::address_of(account);
@@ -818,21 +823,27 @@ module aptos_framework::stake {
         assert!(signer::address_of(account) == stake_pool.operator_address, error::invalid_argument(ENOT_OPERATOR));
 
         let validator_set = borrow_global_mut<ValidatorSet>(@aptos_framework);
-        // Validate that the validator is already part of the validator set.
-        let maybe_index = find_validator(&validator_set.active_validators, pool_address);
-        assert!(option::is_some(&maybe_index), error::invalid_argument(ENOT_VALIDATOR));
-        let index = option::extract(&mut maybe_index);
+        // If the validator is still pending_active, directly kick the validator out.
+        let maybe_pending_active_index = find_validator(&validator_set.pending_active, pool_address);
+        if (option::is_some(&maybe_pending_active_index)) {
+            vector::swap_remove(
+                &mut validator_set.pending_active, option::extract(&mut maybe_pending_active_index));
+        } else {
+            // Validate that the validator is already part of the validator set.
+            let maybe_active_index = find_validator(&validator_set.active_validators, pool_address);
+            assert!(option::is_some(&maybe_active_index), error::invalid_argument(ENOT_VALIDATOR));
+            let validator_info = vector::swap_remove(
+                &mut validator_set.active_validators, option::extract(&mut maybe_active_index));
+            assert!(vector::length(&validator_set.active_validators) > 0, error::invalid_argument(ELAST_VALIDATOR));
+            vector::push_back(&mut validator_set.pending_inactive, validator_info);
 
-        let validator_info = vector::swap_remove(&mut validator_set.active_validators, index);
-        assert!(vector::length(&validator_set.active_validators) > 0, error::invalid_argument(ELAST_VALIDATOR));
-        vector::push_back(&mut validator_set.pending_inactive, validator_info);
-
-        event::emit_event<LeaveValidatorSetEvent>(
-            &mut stake_pool.leave_validator_set_events,
-            LeaveValidatorSetEvent {
-                pool_address,
-            },
-        );
+            event::emit_event<LeaveValidatorSetEvent>(
+                &mut stake_pool.leave_validator_set_events,
+                LeaveValidatorSetEvent {
+                    pool_address,
+                },
+            );
+        };
     }
 
     /// Returns true if the current validator can still vote in the current epoch.
@@ -1485,6 +1496,22 @@ module aptos_framework::stake {
 
         // Add more stake, which now exceeds the 100% limit. This should fail.
         mint_and_add_stake(&validator_2, 1);
+    }
+
+    #[test(aptos_framework = @aptos_framework, validator = @0x123)]
+    public entry fun test_pending_active_validator_leaves_validator_set(
+        aptos_framework: signer,
+        validator: signer,
+    ) acquires OwnerCapability, StakePool, AptosCoinCapabilities, ValidatorConfig, ValidatorPerformance, ValidatorSet {
+        initialize_for_test(&aptos_framework);
+        // Validator joins but epoch hasn't ended, so the validator is still pending_active.
+        initialize_test_validator(&validator, 100, true, false);
+        let validator_address = signer::address_of(&validator);
+        assert!(get_validator_state(validator_address) == VALIDATOR_STATUS_PENDING_ACTIVE, 0);
+
+        // Leave the validator set immediately.
+        leave_validator_set(&validator, validator_address);
+        assert!(get_validator_state(validator_address) == VALIDATOR_STATUS_INACTIVE, 1);
     }
 
     #[test(aptos_framework = @aptos_framework, validator = @0x123)]
