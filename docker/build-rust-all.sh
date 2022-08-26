@@ -8,6 +8,7 @@ RUSTFLAGS="--cfg tokio_unstable" cargo build --release \
         -p aptos \
         -p aptos-faucet \
         -p aptos-indexer \
+        -p aptos-sf-indexer \
         -p aptos-node \
         -p aptos-node-checker \
         -p aptos-openapi-spec-generator \
